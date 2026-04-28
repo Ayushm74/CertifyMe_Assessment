@@ -33,7 +33,7 @@
 
 ```bash
 # Clone repo
-git clone <https://github.com/Ayushm74/CertifyMe_Assessment>
+git clone https://github.com/Ayushm74/CertifyMe_Assessment
 cd Test1-main
 
 # Install dependencies
