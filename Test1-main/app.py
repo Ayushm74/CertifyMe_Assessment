@@ -3,7 +3,6 @@ import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from flask_cors import CORS
 
 
 import mysql.connector
@@ -11,14 +10,23 @@ from flask import Flask, jsonify, request, send_from_directory, session
 from mysql.connector import errorcode
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from flask import Flask
+from flask_cors import CORS
+
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=[
-    "https://certify-me-assessment-zqqv.vercel.app"
-])
+
+CORS(
+    app,
+    supports_credentials=True,
+    resources={r"/*": {
+        "origins": [
+            "https://certify-me-assessment-zqqv.vercel.app"
+        ]
+    }}
+)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "sky")
 
-app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="")
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-this-secret-key")
 app.permanent_session_lifetime = timedelta(days=30)
 
