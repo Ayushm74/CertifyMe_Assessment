@@ -26,12 +26,20 @@
 ## ⚙️ Setup  
 
 ```bash
+
+---
+
+## ⚙️ Setup  
+
+```bash
 # Clone repo
-git clone <your-repo-link>
-cd <project-folder>
+git clone <https://github.com/Ayushm74/CertifyMe_Assessment>
+cd Test1-main
+
+# Install dependencies
+pip install -r requirements.txt
 
 # Install frontend
 cd frontend && npm install
 
-# Install backend
-cd ../backend && pip install -r requirements.txt
+
