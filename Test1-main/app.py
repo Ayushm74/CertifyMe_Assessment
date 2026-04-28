@@ -6,29 +6,30 @@ from datetime import datetime, timedelta, timezone
 
 
 import mysql.connector
-from flask import Flask, jsonify, request, send_from_directory, session
+from flask import Flask, jsonify, make_response, request, send_from_directory, session
 from mysql.connector import errorcode
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from flask import Flask
-from flask_cors import CORS
-
 app = Flask(__name__)
-
-CORS(
-    app,
-    supports_credentials=True,
-    resources={r"/*": {
-        "origins": [
-            "https://certify-me-assessment-zqqv.vercel.app"
-        ]
-    }}
-)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "sky")
 
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-this-secret-key")
 app.permanent_session_lifetime = timedelta(days=30)
+app.config["SESSION_COOKIE_SAMESITE"] = os.environ.get("SESSION_COOKIE_SAMESITE", "None")
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() == "true"
+
+DEFAULT_ALLOWED_ORIGINS = {
+    "https://certify-me-assessment-zqqv.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000",
+}
+ALLOWED_ORIGINS = {
+    origin.strip().rstrip("/")
+    for origin in os.environ.get("ALLOWED_ORIGINS", ",".join(DEFAULT_ALLOWED_ORIGINS)).split(",")
+    if origin.strip()
+}
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 CATEGORY_MAP = {
@@ -41,6 +42,34 @@ CATEGORY_MAP = {
     "other": "Other",
 }
 VALID_CATEGORIES = set(CATEGORY_MAP.values())
+
+
+def is_allowed_origin(origin):
+    if not origin:
+        return False
+    normalized = origin.rstrip("/")
+    return normalized in ALLOWED_ORIGINS or normalized.endswith(".vercel.app")
+
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        return make_response("", 204)
+
+
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get("Origin")
+    if is_allowed_origin(origin):
+        response.headers["Access-Control-Allow-Origin"] = origin.rstrip("/")
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = request.headers.get(
+            "Access-Control-Request-Headers",
+            "Content-Type, Authorization",
+        )
+        response.headers["Vary"] = "Origin"
+    return response
 
 
 def db_config(include_database=True):
