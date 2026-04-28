@@ -4,20 +4,21 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
-
 import mysql.connector
 from flask import Flask, jsonify, make_response, request, send_from_directory, session
 from mysql.connector import errorcode
+from itsdangerous import BadSignature, URLSafeSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
-app = Flask(__name__)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "sky")
+app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="")
 
 app.secret_key = os.environ.get("SECRET_KEY", "dev-change-this-secret-key")
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_SAMESITE"] = os.environ.get("SESSION_COOKIE_SAMESITE", "None")
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "true").lower() == "true"
+auth_serializer = URLSafeSerializer(app.secret_key, salt="admin-auth")
 
 DEFAULT_ALLOWED_ORIGINS = {
     "https://certify-me-assessment-zqqv.vercel.app",
@@ -90,14 +91,17 @@ def get_db():
 
 def init_db():
     database = os.environ.get("MYSQL_DATABASE", "certify_me")
-    root_conn = mysql.connector.connect(**db_config(include_database=False))
-    root_cursor = root_conn.cursor()
-    root_cursor.execute(
-        f"CREATE DATABASE IF NOT EXISTS `{database}` "
-        "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-    )
-    root_cursor.close()
-    root_conn.close()
+    try:
+        root_conn = mysql.connector.connect(**db_config(include_database=False))
+        root_cursor = root_conn.cursor()
+        root_cursor.execute(
+            f"CREATE DATABASE IF NOT EXISTS `{database}` "
+            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+        )
+        root_cursor.close()
+        root_conn.close()
+    except mysql.connector.Error as err:
+        app.logger.warning("Skipping database creation for %s: %s", database, err)
 
     conn = get_db()
     cursor = conn.cursor()
@@ -159,7 +163,30 @@ def api_error(message, status=400):
 
 
 def current_admin_id():
-    return session.get("admin_id")
+    session_admin_id = session.get("admin_id")
+    if session_admin_id:
+        return session_admin_id
+
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+
+    try:
+        payload = auth_serializer.loads(auth_header.removeprefix("Bearer ").strip())
+    except BadSignature:
+        return None
+
+    return payload.get("admin_id")
+
+
+def current_admin_from_token():
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None
+    try:
+        return auth_serializer.loads(auth_header.removeprefix("Bearer ").strip())
+    except BadSignature:
+        return None
 
 
 def require_admin():
@@ -245,7 +272,13 @@ def validate_opportunity_payload(payload):
 
 @app.route("/")
 def index():
-    return send_from_directory(STATIC_DIR, "admin.html")
+    return send_from_directory(STATIC_DIR, "index.html")
+
+
+@app.errorhandler(mysql.connector.Error)
+def handle_database_error(err):
+    app.logger.exception("Database error: %s", err)
+    return api_error("Database error. Please check the backend database configuration.", 500)
 
 
 @app.route("/api/auth/signup", methods=["POST"])
@@ -311,10 +344,16 @@ def login():
     session["admin_id"] = admin["id"]
     session["admin_name"] = admin["full_name"]
     session["admin_email"] = admin["email"]
+    auth_token = auth_serializer.dumps({
+        "admin_id": admin["id"],
+        "fullName": admin["full_name"],
+        "email": admin["email"],
+    })
 
     return jsonify({
         "message": "Login successful",
         "admin": {"id": admin["id"], "fullName": admin["full_name"], "email": admin["email"]},
+        "authToken": auth_token,
     })
 
 
@@ -323,6 +362,15 @@ def me():
     admin_id = current_admin_id()
     if not admin_id:
         return jsonify({"admin": None}), 401
+    token_admin = current_admin_from_token()
+    if token_admin:
+        return jsonify({
+            "admin": {
+                "id": token_admin.get("admin_id"),
+                "fullName": token_admin.get("fullName"),
+                "email": token_admin.get("email"),
+            }
+        })
     return jsonify({
         "admin": {
             "id": admin_id,

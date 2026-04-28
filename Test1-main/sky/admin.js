@@ -2,8 +2,13 @@ const captchas = { login:'', signup:'', forgot:'' };
 let currentAdmin = null;
 let opportunities = [];
 let editingOpportunityId = null;
+let authToken = null;
 
-const BASE_URL = "https://certifyme-assessment-1.onrender.com";
+const BASE_URL = window.API_BASE_URL || (
+    window.location.hostname.includes('vercel.app')
+        ? 'https://certifyme-assessment-1.onrender.com'
+        : ''
+);
 
 function generateCaptcha(type) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -55,12 +60,34 @@ function showToast(msg) {
     setTimeout(() => document.getElementById('toast').classList.remove('show'), 3000);
 }
 
+function saveAuthSession(token, admin, rememberMe) {
+    const targetStorage = rememberMe ? localStorage : sessionStorage;
+    const otherStorage = rememberMe ? sessionStorage : localStorage;
+    targetStorage.setItem('adminAuthToken', token || '');
+    targetStorage.setItem('adminUser', JSON.stringify(admin || null));
+    otherStorage.removeItem('adminAuthToken');
+    otherStorage.removeItem('adminUser');
+}
+
+function clearAuthSession() {
+    localStorage.removeItem('adminAuthToken');
+    localStorage.removeItem('adminUser');
+    sessionStorage.removeItem('adminAuthToken');
+    sessionStorage.removeItem('adminUser');
+}
+
+function restoreAuthToken() {
+    authToken = localStorage.getItem('adminAuthToken') || sessionStorage.getItem('adminAuthToken') || null;
+    return authToken;
+}
+
 
 async function apiFetch(url, options = {}) {
     const response = await fetch(BASE_URL + url, {
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
+            ...(authToken ? { 'Authorization': 'Bearer ' + authToken } : {}),
             ...(options.headers || {})
         },
         ...options
@@ -140,6 +167,8 @@ async function handleLogout() {
     currentAdmin = null;
     opportunities = [];
     editingOpportunityId = null;
+    authToken = null;
+    clearAuthSession();
     document.getElementById('dashboardWrapper').classList.remove('active');
     document.getElementById('authWrapper').style.display = 'flex';
     document.body.style.alignItems = '';
@@ -771,6 +800,8 @@ document.getElementById('loginForm').addEventListener('submit', async function(e
             method: 'POST',
             body: JSON.stringify({ email, password, rememberMe })
         });
+        authToken = data.authToken || null;
+        saveAuthSession(authToken, data.admin, rememberMe);
         showToast('Login successful! Redirecting...');
         generateCaptcha('login');
         this.reset();
@@ -868,6 +899,7 @@ window.addEventListener('resize', () => {
 });
 
 async function loadExistingSession() {
+    restoreAuthToken();
     try {
         const data = await apiFetch('/api/auth/me');
         if (data.admin) await showDashboard(data.admin);
