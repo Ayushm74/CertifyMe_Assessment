@@ -3,6 +3,8 @@ let currentAdmin = null;
 let opportunities = [];
 let editingOpportunityId = null;
 
+const BASE_URL = "https://certifyme-assessment-1.onrender.com";
+
 function generateCaptcha(type) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
     let code = '';
@@ -53,16 +55,23 @@ function showToast(msg) {
     setTimeout(() => document.getElementById('toast').classList.remove('show'), 3000);
 }
 
+
 async function apiFetch(url, options = {}) {
-    const response = await fetch(url, {
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    const response = await fetch(BASE_URL + url, {
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(options.headers || {})
+        },
         ...options
     });
+
     const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
         throw new Error(data.error || 'Something went wrong');
     }
+
     return data;
 }
 
